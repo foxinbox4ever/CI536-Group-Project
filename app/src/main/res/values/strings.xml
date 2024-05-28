@@ -1,0 +1,14 @@
+<resources>
+    <string name="app_name">AI Photo Scanner</string>
+    <string name="enter_to_add">Click the camera icon to upload picture.</string>
+    <string name="about_me_text">
+        Hi, my name is Alharith,\n
+        I wrote this code for the group project.\n
+        This group consists of:\n
+        Alharith Musa, Nate Jones,\n
+        Amber Egan Slegg, and Oliver Conway.\n
+        We are all Computer Science students,\n
+        Which study at the University of Brighton\n\n
+        Feel free to get in touch with me at\n
+    </string>
+</resources>
