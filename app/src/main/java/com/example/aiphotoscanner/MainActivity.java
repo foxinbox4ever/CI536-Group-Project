@@ -1,11 +1,14 @@
 package com.example.aiphotoscanner;
 
 import android.Manifest;
+import android.app.Activity;
 import android.content.Intent;
 import android.content.pm.PackageManager;
 import android.graphics.Bitmap;
+import android.net.Uri;
 import android.os.Bundle;
 import android.provider.MediaStore;
+import android.util.Log;
 import android.view.MenuInflater;
 import android.view.View;
 import android.widget.Button;
@@ -14,6 +17,7 @@ import android.widget.PopupMenu;
 import android.widget.Toast;
 
 import androidx.activity.result.ActivityResultLauncher;
+import androidx.activity.result.PickVisualMediaRequest;
 import androidx.activity.result.contract.ActivityResultContracts;
 import androidx.annotation.NonNull;
 import androidx.appcompat.app.AppCompatActivity;
@@ -23,11 +27,15 @@ import androidx.core.content.ContextCompat;
 public class MainActivity extends AppCompatActivity {
 
     private static final int CAMERA_PERMISSION_REQUEST_CODE = 100;
+    private static final int GALLERY_PERMISSION_REQUEST_CODE = 101;
     private ImageView imgButton;
+    private ImageView galleryButton;
     private ImageView capturedImageView;
     private Button uploadButton;
     private Button cancelButton;
     private ActivityResultLauncher<Intent> cameraLauncher;
+    private ActivityResultLauncher<PickVisualMediaRequest> pickMediaLauncher;
+    private Uri capturedImageUri;
 
     @Override
     protected void onCreate(Bundle savedInstanceState) {
@@ -35,6 +43,7 @@ public class MainActivity extends AppCompatActivity {
         setContentView(R.layout.activity_main);
 
         imgButton = findViewById(R.id.imageButton);
+        galleryButton = findViewById(R.id.galleryButton);
         capturedImageView = findViewById(R.id.capturedImageView);
         uploadButton = findViewById(R.id.uploadButton);
         cancelButton = findViewById(R.id.cancelButton);
@@ -45,13 +54,32 @@ public class MainActivity extends AppCompatActivity {
                     if (result.getResultCode() == RESULT_OK) {
                         Bundle extras = result.getData().getExtras();
                         Bitmap imageBitmap = (Bitmap) extras.get("data");
+                        capturedImageUri = getImageUri(this, imageBitmap);
                         capturedImageView.setImageBitmap(imageBitmap);
                         capturedImageView.setVisibility(View.VISIBLE);
                         uploadButton.setVisibility(View.VISIBLE);
                         cancelButton.setVisibility(View.VISIBLE);
                         imgButton.setVisibility(View.GONE);
+                        galleryButton.setVisibility(View.GONE);
                     } else {
                         Toast.makeText(this, "Failed to capture image", Toast.LENGTH_SHORT).show();
+                    }
+                });
+
+        pickMediaLauncher = registerForActivityResult(
+                new ActivityResultContracts.PickVisualMedia(),
+                uri -> {
+                    if (uri != null) {
+                        Log.d("PhotoPicker", "Selected URI: " + uri);
+                        capturedImageUri = uri;
+                        capturedImageView.setImageURI(uri);
+                        capturedImageView.setVisibility(View.VISIBLE);
+                        uploadButton.setVisibility(View.VISIBLE);
+                        cancelButton.setVisibility(View.VISIBLE);
+                        imgButton.setVisibility(View.GONE);
+                        galleryButton.setVisibility(View.GONE);
+                    } else {
+                        Log.d("PhotoPicker", "No media selected");
                     }
                 });
 
@@ -60,6 +88,14 @@ public class MainActivity extends AppCompatActivity {
                 launchCamera();
             } else {
                 requestCameraPermission();
+            }
+        });
+
+        galleryButton.setOnClickListener(v -> {
+            if (checkGalleryPermission()) {
+                launchGallery();
+            } else {
+                requestGalleryPermission();
             }
         });
 
@@ -72,6 +108,25 @@ public class MainActivity extends AppCompatActivity {
         cancelButton.setOnClickListener(v -> {
             resetView();
         });
+
+        if (savedInstanceState != null) {
+            Uri uri = savedInstanceState.getParcelable("capturedImageUri");
+            if (uri != null) {
+                capturedImageUri = uri;
+                capturedImageView.setImageURI(uri);
+                capturedImageView.setVisibility(View.VISIBLE);
+                uploadButton.setVisibility(View.VISIBLE);
+                cancelButton.setVisibility(View.VISIBLE);
+                imgButton.setVisibility(View.GONE);
+                galleryButton.setVisibility(View.GONE);
+            }
+        }
+    }
+
+    @Override
+    protected void onSaveInstanceState(@NonNull Bundle outState) {
+        super.onSaveInstanceState(outState);
+        outState.putParcelable("capturedImageUri", capturedImageUri);
     }
 
     private boolean checkCameraPermission() {
@@ -82,6 +137,14 @@ public class MainActivity extends AppCompatActivity {
         ActivityCompat.requestPermissions(this, new String[]{Manifest.permission.CAMERA}, CAMERA_PERMISSION_REQUEST_CODE);
     }
 
+    private boolean checkGalleryPermission() {
+        return ContextCompat.checkSelfPermission(this, Manifest.permission.READ_EXTERNAL_STORAGE) == PackageManager.PERMISSION_GRANTED;
+    }
+
+    private void requestGalleryPermission() {
+        ActivityCompat.requestPermissions(this, new String[]{Manifest.permission.READ_EXTERNAL_STORAGE}, GALLERY_PERMISSION_REQUEST_CODE);
+    }
+
     @Override
     public void onRequestPermissionsResult(int requestCode, @NonNull String[] permissions, @NonNull int[] grantResults) {
         super.onRequestPermissionsResult(requestCode, permissions, grantResults);
@@ -90,6 +153,12 @@ public class MainActivity extends AppCompatActivity {
                 launchCamera();
             } else {
                 Toast.makeText(this, "Camera permission denied", Toast.LENGTH_SHORT).show();
+            }
+        } else if (requestCode == GALLERY_PERMISSION_REQUEST_CODE) {
+            if (grantResults.length > 0 && grantResults[0] == PackageManager.PERMISSION_GRANTED) {
+                launchGallery();
+            } else {
+                Toast.makeText(this, "Gallery permission denied", Toast.LENGTH_SHORT).show();
             }
         }
     }
@@ -114,10 +183,22 @@ public class MainActivity extends AppCompatActivity {
 
     private void launchCamera() {
         Intent takePictureIntent = new Intent(MediaStore.ACTION_IMAGE_CAPTURE);
-        if (takePictureIntent.resolveActivity(getPackageManager()) != null) {
+        try {
             cameraLauncher.launch(takePictureIntent);
-        } else {
-            Toast.makeText(this, "No camera app found", Toast.LENGTH_SHORT).show();
+        } catch (Exception e){
+            Toast.makeText(this, "An error has happened", Toast.LENGTH_SHORT).show();
+        }
+    }
+
+    private void launchGallery() {
+        try {
+            PickVisualMediaRequest request = new PickVisualMediaRequest.Builder()
+                    .setMediaType(ActivityResultContracts.PickVisualMedia.ImageOnly.INSTANCE)
+                    .build();
+
+            pickMediaLauncher.launch(request);
+        } catch (Exception e) {
+            Toast.makeText(this, "An error has happened", Toast.LENGTH_SHORT).show();
         }
     }
 
@@ -126,5 +207,12 @@ public class MainActivity extends AppCompatActivity {
         uploadButton.setVisibility(View.GONE);
         cancelButton.setVisibility(View.GONE);
         imgButton.setVisibility(View.VISIBLE);
+        galleryButton.setVisibility(View.VISIBLE);
+        capturedImageUri = null;
+    }
+
+    private Uri getImageUri(Activity activity, Bitmap bitmap) {
+        String path = MediaStore.Images.Media.insertImage(activity.getContentResolver(), bitmap, "Captured Image", null);
+        return Uri.parse(path);
     }
 }
